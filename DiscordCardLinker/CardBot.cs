@@ -126,7 +126,7 @@ namespace DiscordCardLinker
 				string fulltitle = $"{card.Title}{card.Subtitle}{card.TitleSuffix}";
 				AddEntry(CardFullTitles, ScrubInput(fulltitle), card);
 
-				if(!String.IsNullOrWhiteSpace(card.Subtitle))
+				if(!String.IsNullOrWhiteSpace(card.Subtitle) && !String.IsNullOrWhiteSpace(card.TitleSuffix))
 				{
 					fulltitle = $"{card.Subtitle}{card.TitleSuffix}";
 					AddEntry(CardFullTitles, ScrubInput(fulltitle), card);
@@ -142,19 +142,41 @@ namespace DiscordCardLinker
 
 				if (!String.IsNullOrWhiteSpace(card.Subtitle))
 				{
-					AddEntry(CardNicknames, GetLongAbbreviation(card.Subtitle), card);
+					string abbr = GetLongAbbreviation(card.Subtitle);
+					AddEntry(CardNicknames, abbr, card);
+
+					if (!String.IsNullOrWhiteSpace(card.TitleSuffix))
+					{
+						fulltitle = $"{abbr}{card.TitleSuffix}";
+						AddEntry(CardFullTitles, ScrubInput(fulltitle), card);
+					}
 				}
 				else
 				{
-					AddEntry(CardNicknames, GetLongAbbreviation(card.Title), card);
+					string abbr = GetLongAbbreviation(card.Title);
+					AddEntry(CardNicknames, abbr, card);
+
+					if (!String.IsNullOrWhiteSpace(card.TitleSuffix))
+					{
+						fulltitle = $"{abbr}{card.TitleSuffix}";
+						AddEntry(CardFullTitles, ScrubInput(fulltitle), card);
+					}
 				}
 
 				foreach (string entry in card.Nicknames.Split(","))
 				{
 					if (String.IsNullOrWhiteSpace(entry))
 						continue;
+					
+					string nick = ScrubInput(entry);
 
-					AddEntry(CardNicknames, ScrubInput(entry), card);
+					AddEntry(CardNicknames, nick, card);
+
+					if (!String.IsNullOrWhiteSpace(card.TitleSuffix))
+					{
+						fulltitle = $"{nick}{card.TitleSuffix}";
+						AddEntry(CardFullTitles, ScrubInput(fulltitle), card);
+					}
 				}
 
 				CardCollInfo.Add(ScrubInput(card.CollInfo), card);
@@ -333,13 +355,6 @@ namespace DiscordCardLinker
 					{
 						var cutdown = candidates.Where(x => string.IsNullOrWhiteSpace(x.TitleSuffix)).ToList();
 						if(cutdown.Count == 1)
-						{
-							await SendSingle(e, cutdown.First(), type, searchString);
-							continue;
-						}
-
-						string fulltitle = cutdown.First().DisplayName;
-						if(cutdown.All(x => x.DisplayName == fulltitle))
 						{
 							await SendSingle(e, cutdown.First(), type, searchString);
 							continue;
