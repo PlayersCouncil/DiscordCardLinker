@@ -150,6 +150,15 @@ namespace DiscordCardLinker
 						fulltitle = $"{abbr}{card.TitleSuffix}";
 						AddEntry(CardFullTitles, ScrubInput(fulltitle), card);
 					}
+
+					abbr = GetLongAbbreviation($"{card.Title} {card.Subtitle}");
+					AddEntry(CardNicknames, abbr, card);
+
+					if (!String.IsNullOrWhiteSpace(card.TitleSuffix))
+					{
+						fulltitle = $"{abbr}{card.TitleSuffix}";
+						AddEntry(CardFullTitles, ScrubInput(fulltitle), card);
+					}
 				}
 				else
 				{
@@ -366,49 +375,57 @@ namespace DiscordCardLinker
 			}
 		}
 
-		private async Task<List<CardDefinition>> PerformSearch(string searchString)
+		private async Task<HashSet<CardDefinition>> PerformSearch(string searchString)
 		{
-			var candidates = new List<CardDefinition>();
+			var candidates = new HashSet<CardDefinition>();
 
 			string lowerSearch = ScrubInput(searchString);
 
 			if (CardSubtitles.ContainsKey(lowerSearch))
 			{
 				candidates.AddRange(CardSubtitles[lowerSearch]);
-				return candidates;
 			}
 
 			if (CardCollInfo.ContainsKey(lowerSearch))
 			{
 				candidates.Add(CardCollInfo[lowerSearch]);
-				return candidates;
 			}
 
 			if (CardFullTitles.ContainsKey(lowerSearch))
 			{
 				candidates.AddRange(CardFullTitles[lowerSearch]);
-				return candidates;
 			}
 
 			if (CardTitles.ContainsKey(lowerSearch))
 			{
 				candidates.AddRange(CardTitles[lowerSearch]);
-				return candidates;
 			}
 
 			if (CardNicknames.ContainsKey(lowerSearch))
 			{
 				candidates.AddRange(CardNicknames[lowerSearch]);
-				return candidates;
 			}
 
 			if (CardPersonas.ContainsKey(lowerSearch))
 			{
 				candidates.AddRange(CardPersonas[lowerSearch]);
-				return candidates;
 			}
 
 			//TODO: fuzzy search on all of the above
+
+			if(lowerSearch.Length > 2)
+			{
+				foreach (var key in CardFullTitles.Keys)
+				{
+					if (key.Contains(lowerSearch))
+					{
+						candidates.AddRange(CardFullTitles[key]);
+					}
+				};
+			}
+			
+
+			
 			return candidates;
 		}
 
@@ -441,7 +458,8 @@ namespace DiscordCardLinker
 			await e.Message.RespondAsync(response);
 		}
 
-		private async Task SendCollisions(MessageCreateEventArgs e, MatchType type, string search, List<CardDefinition> candidates)
+		private const string LengthMessage = ". . . .\n\n**Too many results to list**! Try a more specific query.";
+		private async Task SendCollisions(MessageCreateEventArgs e, MatchType type, string search, IEnumerable<CardDefinition> candidates)
 		{
 			string response = "";
 
@@ -494,6 +512,15 @@ namespace DiscordCardLinker
 
 				
 			}
+
+			//2000 is the maximum discord message length
+			int max = 2000 - LengthMessage.Length;
+			if (response.Length > max)
+			{
+				response = response.Substring(0, max);
+				response += LengthMessage;
+			}
+
 			var reply = await e.Message.RespondAsync(response);
 
 			foreach (var option in menu)
