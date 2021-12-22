@@ -37,7 +37,7 @@ namespace DiscordCardLinker
 		private const string squareRegex = @"\[(?!@)(.*?)]";
 		private const string curlyRegex = @"{(?!@)(.*?)}";
 		private const string angleRegex = @"<(?!@)(.*?)>";
-		private const string collInfoRegex = @"\((\d+[\w\+]+\d+\w?)\)";
+		private const string collInfoRegex = @"\((V?\d+[\w\+]+\d+\w?)\)";
 		private const string abbreviationReductionRegex = @"[^\w\s]+";
 		private const string stripNonWordsRegex = @"\W+";
 
@@ -362,7 +362,7 @@ namespace DiscordCardLinker
 					string title = candidates.First().Title;
 					if(candidates.All(x => x.Title == title))
 					{
-						var cutdown = candidates.Where(x => string.IsNullOrWhiteSpace(x.TitleSuffix)).ToList();
+						var cutdown = candidates.Where(x => string.IsNullOrWhiteSpace(x.TitleSuffix) || x.TitleSuffix.ToLower().Contains("errata")).ToList();
 						if(cutdown.Count == 1)
 						{
 							await SendSingle(e, cutdown.First(), type, searchString);
@@ -503,7 +503,7 @@ namespace DiscordCardLinker
 
 				if(count < 22)
 				{
-					response += $"\t{emoji} : {card.DisplayName} ({card.CollInfo})\n";
+					response += $"\t{emoji} : {card.DisplayName} {(!string.IsNullOrWhiteSpace(card.TitleSuffix) ? $"{card.TitleSuffix} " : "")}({card.CollInfo})\n";
 				}
 				else
 				{
