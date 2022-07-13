@@ -34,8 +34,8 @@ namespace DiscordCardLinker
 		public Settings CurrentSettings { get; }
 		private DiscordClient Client { get; set; }
 
-		private const string squareRegex = @"\[(?!@)(.*?)]";
-		private const string curlyRegex = @"{(?!@)(.*?)}";
+		private const string squareRegex = @"\[\[(?!@)(.*?)]]";
+		private const string curlyRegex = @"{{(?!@)(.*?)}}";
 		private const string angleRegex = @"<(?!@)(.*?)>";
 		private const string collInfoRegex = @"\((V?\d+[\w\+]+\d+\w?)\)";
 		private const string abbreviationReductionRegex = @"[^\w\s]+";
@@ -245,6 +245,9 @@ namespace DiscordCardLinker
 
 			Client.MessageCreated += OnMessageCreated;
 			Client.MessageReactionAdded += OnReactionAdded;
+			Client.ComponentInteractionCreated += OnButtonPressed;
+			Client.ThreadCreated += OnThreadCreated;
+			Client.ThreadUpdated += OnThreadUpdated;
 
 			var slash = Client.UseSlashCommands(new SlashCommandsConfiguration()
 			{
@@ -255,7 +258,89 @@ namespace DiscordCardLinker
 			slash.RegisterCommands<LoremasterSlashCommands>(699957633121255515);
 
 			await Client.ConnectAsync();
+			
 		}
+
+        private async Task OnThreadUpdated(DiscordClient sender, ThreadUpdateEventArgs e)
+        {
+			await e.ThreadAfter.JoinThreadAsync();
+        }
+
+        private async Task OnThreadCreated(DiscordClient sender, ThreadCreateEventArgs e)
+        {
+			await e.Thread.JoinThreadAsync();
+        }
+
+        private async Task OnButtonPressed(DiscordClient sender, ComponentInteractionCreateEventArgs e)
+		{
+			var match = Regex.Match(e.Id, @"(\w+?)_(.*)");
+			string buttonId = match.Groups[1].Value;
+			ulong authorId = Convert.ToUInt64(match.Groups[2].Value);
+
+            switch (buttonId)
+            {
+				case "delete":
+					if (authorId == 0 || e.User.Id == authorId || e.Message.Reference.Message?.Author?.Id == e.User.Id || e.Guild.OwnerId == e.User.Id)
+					{
+						await e.Message.DeleteAsync();
+					}
+					break;
+
+				case "lockin":
+					if (authorId == 0 || e.User.Id == authorId || e.Message.Reference.Message?.Author?.Id == e.User.Id ||  e.Guild.OwnerId == e.User.Id)
+					{
+						var builder = new DiscordMessageBuilder()
+						.WithContent(e.Message.Content);
+
+						var comps = e.Message.Components.First().Components.ToList();
+						var newButtons = new List<DiscordComponent>();
+						foreach (var comp in comps)
+						{
+							if (!String.IsNullOrWhiteSpace(comp.CustomId))
+								continue;
+							builder.AddComponents(comp);
+						}
+
+						await e.Message.ModifyAsync(builder);
+						await e.Interaction.CreateResponseAsync(InteractionResponseType.UpdateMessage);
+					}
+					//check if there's a dropdown
+					//await e.Message.ModifyAsync(BuildSingle(e.Message, CardCollInfo[ScrubInput(e.Values.First())]));
+
+					break;
+
+				case "dropdown":
+					if (authorId == 0 || e.User.Id == authorId || e.Message.Reference.Message?.Author?.Id == e.User.Id ||  e.Guild.OwnerId == e.User.Id)
+					{
+						var card = CardCollInfo[ScrubInput(e.Values.First())];
+
+						var dbuilder = BuildSingle(e.Message, card, true, true, false);
+
+						//var rows = e.Message.Components.ToList();
+						//foreach(var row in rows)
+						//               {
+						//	coll.
+						//               }
+						var dropdown = e.Message.Components.Last().Components.First();
+						var buttons = e.Message.Components.First().Components.ToList();
+
+						//dbuilder.AddComponents(LockinButton(e.Message.Author.Id, false), DeleteButton(e.Message.Author.Id))
+						dbuilder.WithContent(card.ImageURL)
+							.AddComponents(dropdown);
+
+						await e.Message.ModifyAsync(dbuilder);
+						await e.Interaction.CreateResponseAsync(InteractionResponseType.UpdateMessage);
+					}
+
+					break;
+
+				case "repick":
+
+					break;
+				default:
+                    break;
+            }
+        }
 
 		private async Task OnReactionAdded(DiscordClient sender, MessageReactionAddEventArgs e)
 		{
@@ -316,7 +401,7 @@ namespace DiscordCardLinker
 		{
 			if (Loading)
 			{
-				await Task.Delay(3000);
+				await Task.Delay(1000);
 				if (Loading)
 					return;
 			}
@@ -331,10 +416,10 @@ namespace DiscordCardLinker
 
 			var requests = new List<(MatchType type, string searchString)>();
 
-			foreach (Match match in curlyCR.Matches(content))
-			{
-				requests.Add((MatchType.Wiki, match.Groups[1].Value));
-			}
+			//foreach (Match match in curlyCR.Matches(content))
+			//{
+			//	requests.Add((MatchType.Wiki, match.Groups[1].Value));
+			//}
 
 			foreach (Match match in squareCR.Matches(content))
 			{
@@ -355,7 +440,7 @@ namespace DiscordCardLinker
 				}
 				else if(candidates.Count == 1)
 				{
-					await SendSingle(e, candidates.First(), type, searchString);
+					await SendImage(e.Message, candidates.First());
 				}
 				else
 				{
@@ -365,7 +450,7 @@ namespace DiscordCardLinker
 						var cutdown = candidates.Where(x => string.IsNullOrWhiteSpace(x.TitleSuffix) || x.TitleSuffix.ToLower().Contains("errata")).ToList();
 						if(cutdown.Count == 1)
 						{
-							await SendSingle(e, cutdown.First(), type, searchString);
+							await SendImage(e.Message, cutdown.First());
 							continue;
 						}
 					}
@@ -429,22 +514,41 @@ namespace DiscordCardLinker
 			return candidates;
 		}
 
-		private async Task SendSingle(MessageCreateEventArgs e, CardDefinition card, MatchType type, string search)
+
+		private DiscordButtonComponent DeleteButton(ulong AuthorID)
 		{
-			switch (type)
-			{
-				case MatchType.Image:
-					await SendImage(e, card);
-					break;
-				case MatchType.Wiki:
-					await SendWikiLink(e, card);
-					break;
-			}
+			return new DiscordButtonComponent(ButtonStyle.Danger, $"delete_{AuthorID}", "Delete");
 		}
 
-		private async Task SendImage(MessageCreateEventArgs e, CardDefinition card)
+		private DiscordButtonComponent LockinButton(ulong AuthorID, bool disabled = false)
 		{
-			await e.Message.RespondAsync(card.ImageURL);
+			return new DiscordButtonComponent(ButtonStyle.Primary, $"lockin_{AuthorID}", "Accept", disabled);
+		}
+
+		private async Task SendImage(DiscordMessage original, CardDefinition card)
+		{ 
+			await original.RespondAsync(BuildSingle(original, card, true, true, false));
+		}
+
+		private DiscordMessageBuilder BuildSingle(DiscordMessage original, CardDefinition card, bool wiki, bool buttons, bool disable)
+        {
+			var builder = new DiscordMessageBuilder()
+				.WithReply(original.Id)
+				.WithContent(card.ImageURL);
+
+			var comps = new List<DiscordComponent>();
+
+			if(wiki)
+            {
+				comps.Add(new DiscordLinkButtonComponent(card.WikiURL, "Wiki", false));
+			}
+			if(buttons)
+            {
+				comps.Add(LockinButton(original.Author.Id, disable));
+				comps.Add(DeleteButton(original.Author.Id));
+			}
+
+			return builder.AddComponents(comps);
 		}
 
 		private async Task SendWikiLink(MessageCreateEventArgs e, CardDefinition card)
@@ -454,8 +558,12 @@ namespace DiscordCardLinker
 
 		private async Task SendNotFound(MessageCreateEventArgs e, string search)
 		{
-			string response = $"Unable to find any cards called `{search}`.  Sorry :(";
-			await e.Message.RespondAsync(response);
+			var builder = new DiscordMessageBuilder()
+				.WithReply(e.Message.Id)
+				.WithContent($"Unable to find any cards called `{search}`.  Sorry :(")
+				.AddComponents(DeleteButton(0));
+
+			await e.Message.RespondAsync(builder);
 		}
 
 		private const string LengthMessage = ". . . .\n\n**Too many results to list**! Try a more specific query.";
@@ -463,109 +571,30 @@ namespace DiscordCardLinker
 		{
 			string response = "";
 
-			switch (type)
+			if (e.Author.IsBot)
 			{
-				case MatchType.Image:
-					if (e.Author.IsBot)
-					{
-						response += $"Found multiple potential candidates for card image `{search}`.\nTry again with one of the following:\n\n";
-					}
-					else
-					{
-						response += $"Found multiple potential candidates for card image `{search}`.\nReact with the option you'd like to display:\n\n";
-					}
-					break;
-				case MatchType.Wiki:
-					if (e.Author.IsBot)
-					{
-						response += $"Found multiple potential candidates for card wiki page `{search}`.\nTry again with one of the following:\n\n";
-					}
-					else
-					{
-						response += $"Found multiple potential candidates for card wiki page `{search}`.\nReact with the option you'd like to display:\n\n";
-					}
-					break;
+				response += $"Found multiple potential candidates for card image `{search}`.\nTry again with one of the following:\n\n";
 			}
-			
+			else
+			{
+				response += $"Found multiple potential candidates for card image `{search}`.\nSelect your choice from the dropdown below:\n\n";
+			}
+
 
 			var menu = new List<string>();
 
-			int count = 1;
-			foreach(var card in candidates)
-			{
-				string emoji = GetEmoji(count++);
-				menu.Add(emoji);
+			var options = candidates.Take(25).Select(x => new DiscordSelectComponentOption($"{x.DisplayName} ({x.CollInfo})", x.CollInfo));
 
-				if(count == 22)
-				{
-					response += "\n Maximum menu limit reached.  More cards were found:\n";
-				}
+			var dropdown = new DiscordSelectComponent($"dropdown_{e.Message.Author.Id}", null, options);
 
-				if(count < 22)
-				{
-					response += $"\t{emoji} : {card.DisplayName} {(!string.IsNullOrWhiteSpace(card.TitleSuffix) ? $"{card.TitleSuffix} " : "")}({card.CollInfo})\n";
-				}
-				else
-				{
-					response += $"\t{card.DisplayName} ({card.CollInfo})\n";
-				}
+			var builder = BuildSingle(e.Message, CardCollInfo["0"], false, true, true)
+				.WithReply(e.Message.Id)
+				.WithContent(response)
+				.AddComponents(dropdown);
 
-				
-			}
+			await e.Message.RespondAsync(builder);
 
-			//2000 is the maximum discord message length
-			int max = 2000 - LengthMessage.Length;
-			if (response.Length > max)
-			{
-				response = response.Substring(0, max);
-				response += LengthMessage;
-			}
-
-			var reply = await e.Message.RespondAsync(response);
-
-			foreach (var option in menu)
-			{
-
-				if (option == "-")
-					continue;
-
-				await reply.CreateReactionAsync(DiscordEmoji.FromName(Client, option));
-			}
 		}
 
-		//There's a limit of 20 reactions to any one message on Discord
-		private Dictionary<int, string> IDEmoji = new Dictionary<int, string>()
-		{
-
-			[1] = ":one:",
-			[2] = ":two:",
-			[3] = ":three:",
-			[4] = ":four:",
-			[5] = ":five:",
-			[6] = ":six:",
-			[7] = ":seven:",
-			[8] = ":eight:",
-			[9] = ":nine:",
-			[10] = ":regional_indicator_a:",
-			[11] = ":regional_indicator_b:",
-			[12] = ":regional_indicator_c:",
-			[13] = ":regional_indicator_d:",
-			[14] = ":regional_indicator_e:",
-			[15] = ":regional_indicator_f:",
-			[16] = ":regional_indicator_g:",
-			[17] = ":regional_indicator_h:",
-			[18] = ":regional_indicator_i:",
-			[19] = ":regional_indicator_j:",
-			[20] = ":regional_indicator_k:",
-
-		};
-
-		private string GetEmoji(int count)
-		{
-			if (count <= 0 || count > 20)
-				return "-";
-
-			return IDEmoji[count];
-		}
 	}
 }
