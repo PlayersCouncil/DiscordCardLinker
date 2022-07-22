@@ -120,6 +120,9 @@ namespace DiscordCardLinker
 
 			foreach(var card in Cards)
 			{
+				if (string.IsNullOrWhiteSpace(card.ID) || string.IsNullOrWhiteSpace(card.CollInfo))
+					continue;
+
 				AddEntry(CardTitles, ScrubInput(card.Title), card);
 				AddEntry(CardSubtitles, ScrubInput(card.Subtitle), card);
 
@@ -188,7 +191,10 @@ namespace DiscordCardLinker
 					}
 				}
 
-				CardCollInfo.Add(ScrubInput(card.CollInfo), card);
+				if(!CardCollInfo.ContainsKey(ScrubInput(card.CollInfo)))
+                {
+					CardCollInfo.Add(ScrubInput(card.CollInfo), card);
+				}
 			}
 
 			Loading = false;
