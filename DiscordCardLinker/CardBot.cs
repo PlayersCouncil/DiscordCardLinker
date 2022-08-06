@@ -122,18 +122,14 @@ namespace DiscordCardLinker
 			{
 				if (string.IsNullOrWhiteSpace(card.ID) || string.IsNullOrWhiteSpace(card.CollInfo))
 					continue;
-
+				//Ulaire Enquea
 				AddEntry(CardTitles, ScrubInput(card.Title), card);
+				//Lieutenant of Morgul
 				AddEntry(CardSubtitles, ScrubInput(card.Subtitle), card);
 
 				string fulltitle = $"{card.Title}{card.Subtitle}{card.TitleSuffix}";
+				//Ulaire Enquea Lieutenant of Morgul (T)
 				AddEntry(CardFullTitles, ScrubInput(fulltitle), card);
-
-				if(!String.IsNullOrWhiteSpace(card.Subtitle) && !String.IsNullOrWhiteSpace(card.TitleSuffix))
-				{
-					fulltitle = $"{card.Subtitle}{card.TitleSuffix}";
-					AddEntry(CardFullTitles, ScrubInput(fulltitle), card);
-				}
 
 				foreach (string entry in card.Personas.Split(","))
 				{
@@ -145,31 +141,53 @@ namespace DiscordCardLinker
 
 				if (!String.IsNullOrWhiteSpace(card.Subtitle))
 				{
+					//LOM
 					string abbr = GetLongAbbreviation(card.Subtitle);
 					AddEntry(CardNicknames, abbr, card);
+					//Ulaire Enquea LOM
+					string titleAbbr = ScrubInput($"{card.Title}{abbr}");
+					AddEntry(CardNicknames, titleAbbr, card);
+
+					if (card.Title.Contains(" "))
+					{
+						foreach (string sub in card.Title.Split(" "))
+						{
+							if (sub.ToLower() == "the" || sub.ToLower() == "of")
+								continue;
+							//Enquea LOM
+							string subAbbr = ScrubInput($"{sub}{abbr}");
+							AddEntry(CardNicknames, subAbbr, card);
+						}
+					}
 
 					if (!String.IsNullOrWhiteSpace(card.TitleSuffix))
 					{
+						//Lieutenant of Morgul (T)
 						fulltitle = $"{abbr}{card.TitleSuffix}";
 						AddEntry(CardFullTitles, ScrubInput(fulltitle), card);
 					}
 
+					//UELOM
 					abbr = GetLongAbbreviation($"{card.Title} {card.Subtitle}");
 					AddEntry(CardNicknames, abbr, card);
+					
 
 					if (!String.IsNullOrWhiteSpace(card.TitleSuffix))
 					{
+						//LOM (T)
 						fulltitle = $"{abbr}{card.TitleSuffix}";
 						AddEntry(CardFullTitles, ScrubInput(fulltitle), card);
 					}
 				}
 				else
 				{
+					//AWINL
 					string abbr = GetLongAbbreviation(card.Title);
 					AddEntry(CardNicknames, abbr, card);
 
 					if (!String.IsNullOrWhiteSpace(card.TitleSuffix))
 					{
+						//AWINL (T)
 						fulltitle = $"{abbr}{card.TitleSuffix}";
 						AddEntry(CardFullTitles, ScrubInput(fulltitle), card);
 					}
@@ -181,11 +199,12 @@ namespace DiscordCardLinker
 						continue;
 					
 					string nick = ScrubInput(entry);
-
+					//Shotgun
 					AddEntry(CardNicknames, nick, card);
 
 					if (!String.IsNullOrWhiteSpace(card.TitleSuffix))
 					{
+						//Shotgun (T)
 						fulltitle = $"{nick}{card.TitleSuffix}";
 						AddEntry(CardFullTitles, ScrubInput(fulltitle), card);
 					}
@@ -193,6 +212,7 @@ namespace DiscordCardLinker
 
 				if(!CardCollInfo.ContainsKey(ScrubInput(card.CollInfo)))
                 {
+					//1U231
 					CardCollInfo.Add(ScrubInput(card.CollInfo), card);
 				}
 			}
@@ -260,8 +280,7 @@ namespace DiscordCardLinker
 				Services = new ServiceCollection().AddSingleton<CardBot>(this).BuildServiceProvider()
 			});
 
-			//TODO: remove this id
-			slash.RegisterCommands<LoremasterSlashCommands>(699957633121255515);
+			slash.RegisterCommands<LoremasterSlashCommands>();
 
 			await Client.ConnectAsync();
 			
@@ -416,7 +435,7 @@ namespace DiscordCardLinker
 			if (e.Message.Author.IsBot && e.Message.Author.Id == 842629929328836628)
 				return;
 
-			await Task.Delay(500);
+			await Task.Delay(300);
 
 			string content = e.Message.Content;
 
