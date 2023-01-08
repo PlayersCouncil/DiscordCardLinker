@@ -35,11 +35,13 @@ namespace DiscordCardLinker
 		private DiscordClient Client { get; set; }
 
 		private const string squareRegex = @"\[\[(?!@)(.*?)]]";
+		private const string curlyRegex = @"\{\{(?!@)(.*?)\}\}";
 		private const string collInfoRegex = @"\((V?\d+[\w\+]+\d+\w?)\)";
 		private const string abbreviationReductionRegex = @"[^\w\s]+";
 		private const string stripNonWordsRegex = @"\W+";
 
 		private Regex squareCR;
+		private Regex curlyCR;
 		private Regex collInfoCR;
 		private Regex abbreviationReductionCR;
 		private Regex stripNonWordsCR;
@@ -64,13 +66,15 @@ namespace DiscordCardLinker
 		// which has no image (this could theoretically be a placeholder, but what's the point of that).
 		private CardDefinition NullCard { get; } = new CardDefinition()
 		{
-			ImageURL = ""
+			ImageURL = "",
+			DisplayName = ""
 		};
 
 		public CardBot(Settings settings)
 		{
 			CurrentSettings = settings;
 			squareCR = new Regex(squareRegex, RegexOptions.Compiled);
+			curlyCR = new Regex(curlyRegex, RegexOptions.Compiled);
 			collInfoCR = new Regex(collInfoRegex, RegexOptions.Compiled);
 			abbreviationReductionCR = new Regex(abbreviationReductionRegex, RegexOptions.Compiled);
 			stripNonWordsCR = new Regex(stripNonWordsRegex, RegexOptions.Compiled);
@@ -286,7 +290,7 @@ namespace DiscordCardLinker
 			{
 				Token = CurrentSettings.Token,
 				TokenType = TokenType.Bot,
-				Intents = DiscordIntents.AllUnprivileged,
+				Intents = DiscordIntents.AllUnprivileged | DiscordIntents.MessageContents,
 				MinimumLogLevel = LogLevel.Debug
 			});
 
@@ -335,9 +339,10 @@ namespace DiscordCardLinker
 		 */
 		private async Task OnUIControlInteracted(DiscordClient sender, ComponentInteractionCreateEventArgs e)
 		{
-			var match = Regex.Match(e.Id, @"(\w+?)_(.*)");
+			var match = Regex.Match(e.Id, @"(\w+?)_(.*)_(.*)");
 			string buttonId = match.Groups[1].Value;
 			ulong authorId = Convert.ToUInt64(match.Groups[2].Value);
+			MatchType summonsType = (MatchType)Enum.Parse(typeof(MatchType), match.Groups[3].Value);
 
             switch (buttonId)
             {
@@ -376,13 +381,18 @@ namespace DiscordCardLinker
 					{
 						var card = CardCollInfo[ScrubInput(e.Values.First())];
 
-						var dbuilder = BuildSingle(e.Message, card, true, true, false);
+						bool nameOnly = false;
+						if(summonsType == MatchType.Wiki)
+                        {
+							nameOnly = true;
+                        }
+
+						var dbuilder = BuildSingle(e.Message, card, nameOnly, true, true, false);
 
 						var dropdown = e.Message.Components.Last().Components.First();
 						var buttons = e.Message.Components.First().Components.ToList();
 
-						dbuilder.WithContent(card.ImageURL)
-							.AddComponents(dropdown);
+						dbuilder.AddComponents(dropdown);
 
 						await e.Message.ModifyAsync(dbuilder);
 						await e.Interaction.CreateResponseAsync(InteractionResponseType.UpdateMessage);
@@ -465,6 +475,11 @@ namespace DiscordCardLinker
 				requests.Add((MatchType.Image, match.Groups[1].Value));
 			}
 
+			foreach (Match match in curlyCR.Matches(content))
+			{
+				requests.Add((MatchType.Wiki, match.Groups[1].Value));
+			}
+
 			if (requests.Count > 0)
 			{
 
@@ -501,15 +516,23 @@ namespace DiscordCardLinker
 					}
 					else if (candidates.Count == 1)
 					{
-						await SendImage(message, candidates.First(), response, i);
+						if(type == MatchType.Image)
+                        {
+							await SendImage(message, candidates.First(), response, i);
+						}
+						else if(type == MatchType.Wiki)
+                        {
+							await SendName(message, candidates.First(), response, i);
+						}
 					}
 					else
 					{
 
 						/*
-						 * If more than one card was found, send a list of the crads in a dropdown as a method of allowing the 
+						 * If more than one card was found, send a list of the cards in a dropdown as a method of allowing the 
 						 * caller to select one of the cards from the list.
 						 */
+
 						await SendCollisions(message, type, searchString, candidates, response, i);
 					}
 					i++;
@@ -627,7 +650,7 @@ namespace DiscordCardLinker
 		 */
 		private DiscordButtonComponent DeleteButton(ulong AuthorID)
 		{
-			return new DiscordButtonComponent(ButtonStyle.Danger, $"delete_{AuthorID}", "Delete");
+			return new DiscordButtonComponent(ButtonStyle.Danger, $"delete_{AuthorID}_Image", "Delete");
 		}
 
 		/*
@@ -636,7 +659,7 @@ namespace DiscordCardLinker
 		 */
 		private DiscordButtonComponent LockinButton(ulong AuthorID, bool disabled = false)
 		{
-			return new DiscordButtonComponent(ButtonStyle.Primary, $"lockin_{AuthorID}", "Accept", disabled);
+			return new DiscordButtonComponent(ButtonStyle.Primary, $"lockin_{AuthorID}_Image", "Accept", disabled);
 		}
 
 		/*
@@ -645,7 +668,24 @@ namespace DiscordCardLinker
 		 */
 		private async Task SendImage(DiscordMessage original, CardDefinition card, DiscordMessage response, int responseIndex)
 		{
-			var builder = BuildSingle(original, card, true, true, false);
+			var builder = BuildSingle(original, card, false, true, true, false);
+			if (response == null)
+			{
+				response = await original.RespondAsync(builder);
+			}
+			else
+			{
+				response = await response.ModifyAsync(builder);
+			}
+			AddResponse(original, response, responseIndex);
+		}
+
+		/*
+		 * Responds to the summons with a message consisting only of the card name, accompanied by the discreet wiki link button.
+		 */
+		private async Task SendName(DiscordMessage original, CardDefinition card, DiscordMessage response, int responseIndex)
+		{
+			var builder = BuildSingle(original, card, true, true, true, false);
 			if (response == null)
 			{
 				response = await original.RespondAsync(builder);
@@ -660,12 +700,20 @@ namespace DiscordCardLinker
 		/*
 		 * Handles the construction of a well-formed response to a summons.
 		 */
-		private DiscordMessageBuilder BuildSingle(DiscordMessage original, CardDefinition card, bool wiki, bool buttons, bool disable)
+		private DiscordMessageBuilder BuildSingle(DiscordMessage original, CardDefinition card, bool nameOnly, bool wiki, bool buttons, bool disable)
         {
 			var builder = new DiscordMessageBuilder()
-				.WithReply(original.Id)
-				.WithContent(card.ImageURL);
+				.WithReply(original.Id);
 
+			if(nameOnly)
+            {
+				builder = builder.WithContent($"{card.DisplayName} ({card.CollInfo})");
+			}
+			else
+            {
+				builder = builder.WithContent(card.ImageURL);
+			}
+				
 			var comps = new List<DiscordComponent>();
 
 			if(wiki)
@@ -719,9 +767,14 @@ namespace DiscordCardLinker
 
 			var options = candidates.Take(25).Select(x => new DiscordSelectComponentOption($"{x.DisplayName} ({x.CollInfo})", x.CollInfo));
 
-			var dropdown = new DiscordSelectComponent($"dropdown_{message.Author.Id}", null, options);
+			var dropdown = new DiscordSelectComponent($"dropdown_{message.Author.Id}_{type}", null, options);
 
-			var builder = BuildSingle(message, NullCard, false, true, true)
+			bool nameOnly = false;
+			if(type == MatchType.Wiki)
+            {
+				nameOnly = true;
+            }
+			var builder = BuildSingle(message, NullCard, nameOnly, false, true, true)
 				.WithReply(message.Id)
 				.WithContent(content)
 				.AddComponents(dropdown);
