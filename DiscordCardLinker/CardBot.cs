@@ -300,12 +300,12 @@ namespace DiscordCardLinker
 			Client.ThreadCreated += OnThreadCreated;
 			Client.ThreadUpdated += OnThreadUpdated;
 
-			var slash = Client.UseSlashCommands(new SlashCommandsConfiguration()
-			{
-				Services = new ServiceCollection().AddSingleton<CardBot>(this).BuildServiceProvider()
-			});
+			//var slash = Client.UseSlashCommands(new SlashCommandsConfiguration()
+			//{
+			//	Services = new ServiceCollection().AddSingleton<CardBot>(this).BuildServiceProvider()
+			//});
 
-			slash.RegisterCommands<LoremasterSlashCommands>();
+			//slash.RegisterCommands<LoremasterSlashCommands>();
 
 			await Client.ConnectAsync();
 			
@@ -370,7 +370,7 @@ namespace DiscordCardLinker
 						}
 
 						await e.Message.ModifyAsync(builder);
-						await e.Interaction.CreateResponseAsync(InteractionResponseType.UpdateMessage);
+						await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.UpdateMessage);
 						PendingResponses[e.Message.Reference.Message] = null;
 					}
 
@@ -395,7 +395,7 @@ namespace DiscordCardLinker
 						dbuilder.AddComponents(dropdown);
 
 						await e.Message.ModifyAsync(dbuilder);
-						await e.Interaction.CreateResponseAsync(InteractionResponseType.UpdateMessage);
+						await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.UpdateMessage);
 					}
 
 					break;
@@ -650,7 +650,7 @@ namespace DiscordCardLinker
 		 */
 		private DiscordButtonComponent DeleteButton(ulong AuthorID)
 		{
-			return new DiscordButtonComponent(ButtonStyle.Danger, $"delete_{AuthorID}_Image", "Delete");
+			return new DiscordButtonComponent(DiscordButtonStyle.Danger, $"delete_{AuthorID}_Image", "Delete");
 		}
 
 		/*
@@ -659,7 +659,7 @@ namespace DiscordCardLinker
 		 */
 		private DiscordButtonComponent LockinButton(ulong AuthorID, bool disabled = false)
 		{
-			return new DiscordButtonComponent(ButtonStyle.Primary, $"lockin_{AuthorID}_Image", "Accept", disabled);
+			return new DiscordButtonComponent(DiscordButtonStyle.Primary, $"lockin_{AuthorID}_Image", "Accept", disabled);
 		}
 
 		/*
